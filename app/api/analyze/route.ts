@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
 
       if (!file) {
         return NextResponse.json(
-          { error: 'Загрузите файл (PDF/TXT) или отправьте JSON с полем "text".' },
+          { error: 'Загрузите файл (PDF, TXT, XLSX) или отправьте JSON с полем "text".' },
           { status: 400 }
         );
       }
@@ -75,9 +75,37 @@ export async function POST(request: NextRequest) {
         }
       } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
         text = await file.text();
+      } else if (
+        file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.name.toLowerCase().endsWith('.xlsx')
+      ) {
+        try {
+          const XLSX = await import('xlsx');
+          const buf = await file.arrayBuffer();
+          const wb = XLSX.read(buf, { type: 'array' });
+          const parts: string[] = [];
+          for (const name of wb.SheetNames) {
+            const sheet = wb.Sheets[name];
+            const csv = XLSX.utils.sheet_to_csv(sheet);
+            if (csv.trim()) parts.push(`[Лист: ${name}]\n${csv}`);
+          }
+          text = parts.join('\n\n');
+          if (!text.trim()) {
+            return NextResponse.json(
+              { error: 'XLSX не содержит данных.' },
+              { status: 400 }
+            );
+          }
+        } catch (xlsxError: any) {
+          console.error('Ошибка при обработке XLSX:', xlsxError);
+          return NextResponse.json(
+            { error: `Ошибка XLSX: ${xlsxError?.message || 'неизвестная'}` },
+            { status: 400 }
+          );
+        }
       } else {
         return NextResponse.json(
-          { error: 'Поддерживаются только PDF и TXT.' },
+          { error: 'Поддерживаются PDF, TXT и XLSX.' },
           { status: 400 }
         );
       }

@@ -3,6 +3,7 @@
 import { Suspense, useState, ChangeEvent, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { extractTNVEDCodes } from './lib/tnved';
+import { addToHistory } from './lib/history';
 
 type InputMode = 'file' | 'text';
 
@@ -33,8 +34,12 @@ function HomeContent() {
   }, [searchParams]);
 
   const isValidFileType = (f: File) => {
-    const ok = ['text/plain', 'application/pdf'];
-    const ext = ['.txt', '.pdf'];
+    const ok = [
+      'text/plain',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    const ext = ['.txt', '.pdf', '.xlsx'];
     return ok.includes(f.type) || ext.some((e) => f.name.toLowerCase().endsWith(e));
   };
 
@@ -46,7 +51,7 @@ function HomeContent() {
       setError('');
       setResult('');
     } else {
-      setError('Выберите файл .txt или .pdf');
+      setError('Выберите файл .txt, .pdf или .xlsx');
       setFile(null);
     }
   };
@@ -74,7 +79,7 @@ function HomeContent() {
       setError('');
       setResult('');
     } else {
-      setError('Выберите файл .txt или .pdf');
+      setError('Выберите файл .txt, .pdf или .xlsx');
       setFile(null);
     }
   };
@@ -92,6 +97,7 @@ function HomeContent() {
     setResult('');
 
     try {
+      let resultText = '';
       if (mode === 'text') {
         const res = await fetch('/api/analyze', {
           method: 'POST',
@@ -100,16 +106,27 @@ function HomeContent() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Ошибка анализа');
-        setResult(data.result);
-        return;
+        resultText = data.result;
+        setResult(resultText);
+      } else {
+        const formData = new FormData();
+        formData.append('file', file!);
+        const res = await fetch('/api/analyze', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка анализа');
+        resultText = data.result;
+        setResult(resultText);
       }
-
-      const formData = new FormData();
-      formData.append('file', file!);
-      const res = await fetch('/api/analyze', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка анализа');
-      setResult(data.result);
+      const codes = extractTNVEDCodes(resultText, 20);
+      addToHistory({
+        mode,
+        preview: mode === 'text'
+          ? (textInput.trim().slice(0, 120) + (textInput.trim().length > 120 ? '…' : ''))
+          : file!.name,
+        ...(mode === 'text' && { text: textInput.trim() }),
+        result: resultText,
+        codes,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка при анализе');
     } finally {
@@ -148,7 +165,7 @@ function HomeContent() {
               onClick={() => { setMode('file'); setError(''); setResult(''); }}
               className={`flex-1 rounded-lg py-2.5 text-sm font-semibold transition ${mode === 'file' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:text-gray-900'}`}
             >
-              📄 Файл (PDF, TXT)
+              📄 Файл (PDF, TXT, XLSX)
             </button>
             <button
               type="button"
@@ -171,7 +188,7 @@ function HomeContent() {
               <input
                 type="file"
                 id="file-upload"
-                accept=".txt,.pdf"
+                accept=".txt,.pdf,.xlsx"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -180,7 +197,7 @@ function HomeContent() {
                 <p className="text-xl font-bold text-gray-800 mb-2">
                   {isDragging ? 'Отпустите файл' : 'Перетащите или выберите файл'}
                 </p>
-                <p className="text-gray-600">PDF, TXT — инвойсы, накладные, спецификации</p>
+                <p className="text-gray-600">PDF, TXT, XLSX — инвойсы, накладные, спецификации</p>
               </label>
             </div>
           )}
@@ -204,7 +221,11 @@ function HomeContent() {
             <div className="mt-6 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-2xl">
-                  {file.name.endsWith('.pdf') ? '📕' : '📄'}
+                  {file.name.endsWith('.pdf')
+                    ? '📕'
+                    : file.name.toLowerCase().endsWith('.xlsx')
+                      ? '📊'
+                      : '📄'}
                 </div>
                 <div>
                   <p className="font-bold text-gray-900">{file.name}</p>
