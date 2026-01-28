@@ -140,11 +140,11 @@ export function calculateCustomsPayments(
   // Расчет таможенного сбора
   let customsFee = customsFees2026.minFee;
   for (const feeTier of customsFees2026.byValue) {
-    if ('maxValue' in feeTier && customsValue <= feeTier.maxValue) {
+    if ('maxValue' in feeTier && feeTier.maxValue != null && customsValue <= feeTier.maxValue) {
       customsFee = feeTier.fee;
       break;
     }
-    if ('minValue' in feeTier && customsValue >= feeTier.minValue) {
+    if ('minValue' in feeTier && feeTier.minValue != null && customsValue >= feeTier.minValue) {
       customsFee = feeTier.fee;
       break;
     }
